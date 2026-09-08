@@ -4,7 +4,9 @@
 // FCM HTTP v1 - all authenticated with a Firebase service account passed
 // as environment variables.
 
-import { handleTelegramLogin, handleWhatsappStart, handleWhatsappVerify } from './auth/index.js';
+import { handleTelegramLogin, handleTelegramLoginGet, handleTelegramNative, handleEmailRequest, handleEmailVerify, handleWhatsappStart, handleWhatsappVerify, handleWhatsappResend, handleRegister } from './auth/index.js';
+import { handleAdminWipe, handleAdminCheck } from './admin/handlers.js';
+import { handleTelegramWebhook, handleTelegramDebug } from './telegram/webhook.js';
 
 
 const FIREBASE_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -79,12 +81,17 @@ async function getFcmToken(env, accessToken, uid) {
 }
 
 async function sendPush(env, accessToken, fcmToken, payload) {
+  const extras = {};
+  if (payload.data && typeof payload.data === "object") {
+    for (const [k, v] of Object.entries(payload.data)) extras[k] = String(v);
+  }
   const message = {    message: {
       token: fcmToken,
       notification: { title: payload.title, body: payload.body },
       data: {
         type: payload.type || "info",
         click_action: "FLUTTER_NOTIFICATION_CLICK",
+        ...extras,
       },
       android: {
         priority: "high",
@@ -128,8 +135,25 @@ async function sendPush(env, accessToken, fcmToken, payload) {
         },
       );
     }
+    return { ok: false, ...summarizeFcmError(res.status, errBody) };
   }
-  return res.ok;
+  return { ok: true };
+}
+
+// FCM v1 errors look like {"error":{"code":404,"message":"...","status":"NOT_FOUND"}}.
+// Surface status + message (no tokens or secrets in these bodies) so callers
+// can tell stale-token apart from project/config problems.
+function summarizeFcmError(status, body) {
+  try {
+    const e = JSON.parse(body).error || {};
+    return {
+      fcmStatus: status,
+      fcmCode: e.status || "UNKNOWN",
+      fcmMessage: String(e.message || "").slice(0, 160),
+    };
+  } catch (_) {
+    return { fcmStatus: status, fcmCode: "UNKNOWN", fcmMessage: String(body).slice(0, 160) };
+  }
 }
 
 // ---- Cron helpers (exported for tests) ----
@@ -300,25 +324,123 @@ async function createNotificationDoc(env, accessToken, targetUserId, title, body
   return res.ok;
 }
 
+// ---- App-update release announcements ----
+
+// POST /release/announce {tag, notes?} — called by the GitHub Action on
+// `release: published`. Fans out an `app_update` push + inbox doc to every
+// user with an FCM token. Tapping it only opens Settings; the app re-checks
+// fresh before downloading, so delayed pushes can never install stale builds.
+async function handleReleaseAnnounce(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (_) {
+    return Response.json({ error: 'invalid json' }, { status: 400 });
+  }
+  const tag = String(body.tag || '');
+  if (!tag) return Response.json({ error: 'tag required' }, { status: 400 });
+  const notes = String(body.notes || '').slice(0, 500);
+
+  try {
+    const accessToken = await getAccessToken(env);
+    const docs = await runQuery(env, accessToken, {
+      from: [{ collectionId: 'users' }],
+      limit: 500,
+    });
+    let sent = 0, failed = 0, skipped = 0;
+    for (const d of docs) {
+      const tok = d.data && d.data.fcmToken;
+      if (!tok) { skipped++; continue; }
+      const pushBody = `${tag} is ready to install`;
+      const r = await sendPush(env, accessToken, tok, {
+        title: 'New Cofiz update',
+        body: pushBody,
+        type: 'app_update',
+        data: { version: tag },
+        targetUserId: d.id,
+      });
+      if (r.ok) sent++; else failed++;
+      await createNotificationDoc(
+        env,
+        accessToken,
+        d.id,
+        'New Cofiz update',
+        notes ? `${pushBody}\n\n${notes}` : pushBody,
+        'app_update',
+        'system-release',
+      );
+    }
+    return Response.json({ sent, failed, skipped, total: docs.length });
+  } catch (e) {
+    return Response.json({ error: e.message }, { status: 500 });
+  }
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === '/telegram/webhook') {
+      return handleTelegramWebhook(request, env);
+    }
+    if (url.pathname === '/telegram/debug') {
+      return handleTelegramDebug(request, env);
+    }
+    if (url.pathname === '/auth/telegram/login' && request.method === 'GET') {
+      return handleTelegramLoginGet(request, env);
+    }
+    if (url.pathname === '/' && request.method === 'GET') {
+      return new Response('ok', { status: 200 });
+    }
+    if (url.pathname === '/debug/telegram' && request.method === 'GET') {
+      const chatId = url.searchParams.get('chat_id') || env.DEVELOPER_CHAT_ID;
+      if (!chatId) return new Response('chat_id required', { status: 400 });
+      const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: 'Test from Cofiz worker' }),
+      });
+      const body = await res.text();
+      return new Response(JSON.stringify({ status: res.status, body }), { headers: { 'content-type': 'application/json' } });
+    }
+    if (url.pathname === '/auth/register' && request.method === 'POST') {
+      return handleRegister(request, env);
+    }
     if (request.method !== "POST") {
       return Response.json({ error: "POST only" }, { status: 405 });
     }
-    // Shared-secret gate so only the app can hit the relay.
     if (request.headers.get("X-Relay-Secret") !== env.RELAY_SECRET) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    const url = new URL(request.url);
+    if (url.pathname === '/admin/wipe-firestore') {
+      return handleAdminWipe(request, env, ctx);
+    }
+    if (url.pathname === '/admin/check-firestore') {
+      return handleAdminCheck(request, env);
+    }
+    if (url.pathname === '/release/announce') {
+      return handleReleaseAnnounce(request, env);
+    }
     if (url.pathname === '/auth/telegram') {
       return handleTelegramLogin(request, env);
+    }
+    if (url.pathname === '/auth/telegram/native') {
+      return handleTelegramNative(request, env);
     }
     if (url.pathname === '/auth/whatsapp/start') {
       return handleWhatsappStart(request, env);
     }
     if (url.pathname === '/auth/whatsapp/verify') {
       return handleWhatsappVerify(request, env);
+    }
+    if (url.pathname === '/auth/whatsapp/resend') {
+      return handleWhatsappResend(request, env);
+    }
+    if (url.pathname === '/auth/email/request') {
+      return handleEmailRequest(request, env);
+    }
+    if (url.pathname === '/auth/email/verify') {
+      return handleEmailVerify(request, env);
     }
 
     let payload;
@@ -338,12 +460,16 @@ export default {
       if (!fcmToken) {
         return Response.json({ sent: false, reason: "no fcm token" });
       }
-      const ok = await sendPush(env, accessToken, fcmToken, {
+      const r = await sendPush(env, accessToken, fcmToken, {
         title,
         body: body ?? "",
         type: payload.type,
       });
-      return Response.json({ sent: ok }, { status: ok ? 200 : 502 });
+      if (r.ok) return Response.json({ sent: true });
+      return Response.json(
+        { sent: false, reason: "fcm_rejected", fcmStatus: r.fcmStatus, fcmCode: r.fcmCode, fcmMessage: r.fcmMessage },
+        { status: 502 },
+      );
     } catch (e) {
       return Response.json({ error: e.message }, { status: 500 });
     }
@@ -370,7 +496,7 @@ export default {
                 const tok = await getFcmToken(env, accessToken, uid);
                 if (tok) {
                   await sendPush(env, accessToken, tok, {
-                    title: 'Reminder: no record today',
+                    title: 'Cofiz',
                     body: "No transaction recorded today — add today's purchases/distributions",
                     type: 'nightlyNoRecordReminder',
                     targetUserId: uid,
@@ -403,12 +529,12 @@ export default {
           for (const uid of viewers) {
             const tok = await getFcmToken(env, accessToken, uid);
             if (tok) {
-              await sendPush(env, accessToken, tok, {
-                title: 'Weekly check-in',
-                body: "Check in: see this week's business",
-                type: 'viewerWeeklyCheckIn',
-                targetUserId: uid,
-              });
+                await sendPush(env, accessToken, tok, {
+                    title: 'Cofiz',
+                    body: "Check in: see this week's business",
+                    type: 'viewerWeeklyCheckIn',
+                    targetUserId: uid,
+                  });
             }
             await createNotificationDoc(
               env,
