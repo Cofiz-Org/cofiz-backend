@@ -7,16 +7,22 @@ export async function sendWhatsAppCode(env, phone, code) {
     },
     body: JSON.stringify({
       messaging_product: 'whatsapp',
-      to: phone,
+      to: phone.replace(/^\+/, ''),
       type: 'template',
       template: {
-        name: 'otp_code',
-        language: { code: 'en' },
-        components: [{ type: 'body', parameters: [{ type: 'text', text: code }] }],
+        name: 'cofiz_otp',
+        language: { code: 'en_US' },
+        components: [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: code }],
+          },
+        ],
       },
     }),
   });
   if (!res.ok) {
-    throw new Error(`whatsapp ${res.status}`);
+    const err = await res.text();
+    throw new Error(`whatsapp ${res.status}: ${err}`);
   }
 }
