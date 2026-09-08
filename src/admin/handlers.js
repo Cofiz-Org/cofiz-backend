@@ -1,4 +1,4 @@
-const WIPE_COLLECTIONS = [
+export const WIPE_COLLECTIONS = [
   'users', 'workers', 'transactions', 'debts',
   'expenses', 'income_records',
   'notifications', 'audit_logs', 'fcm_tokens',

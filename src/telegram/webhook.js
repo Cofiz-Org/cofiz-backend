@@ -36,6 +36,8 @@ async function handleCallbackQuery(callbackQuery, env) {
   const chatId = callbackQuery.message?.chat?.id;
   const messageId = callbackQuery.message?.message_id;
   if (!data || !chatId) return;
+  if (!env.DEVELOPER_CHAT_ID ||
+      String(chatId) !== String(env.DEVELOPER_CHAT_ID)) return;
 
   if (data.startsWith('approve:')) {
     const phone = data.slice('approve:'.length);
@@ -89,6 +91,10 @@ export async function handleTelegramWebhook(request, env) {
 }
 
 export async function handleTelegramDebug(request, env) {
+  if (!env.RELAY_SECRET ||
+      request.headers.get('X-Relay-Secret') !== env.RELAY_SECRET) {
+    return new Response('Unauthorized', { status: 401 });
+  }
   const url = new URL(request.url);
   const chatId = url.searchParams.get('chat_id');
   if (!chatId) return new Response('chat_id required', { status: 400 });

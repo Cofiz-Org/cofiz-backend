@@ -6,7 +6,7 @@ if (!globalThis.crypto) {
   globalThis.crypto = webcrypto;
 }
 
-const { handleAdminWipe } = await import('../../src/admin/handlers.js');
+const { handleAdminWipe, WIPE_COLLECTIONS } = await import('../../src/admin/handlers.js');
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -94,7 +94,7 @@ test('200 with 5 docs per collection batched into commit', async () => {
     const res = await handleAdminWipe(post('good'), env, {});
     assert.equal(res.status, 200);
     const body = await res.json();
-    assert.equal(body.deleted, 60);
+    assert.equal(body.deleted, WIPE_COLLECTIONS.length * 5);
   } finally {
     globalThis.fetch = original;
   }
