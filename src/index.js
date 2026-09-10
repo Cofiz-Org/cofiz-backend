@@ -7,6 +7,7 @@
 import { handleTelegramLogin, handleTelegramLoginGet, handleTelegramNative, handleEmailRequest, handleEmailVerify, handleWhatsappStart, handleWhatsappVerify, handleWhatsappResend, handleRegister } from './auth/index.js';
 import { handleAdminWipe, handleAdminCheck } from './admin/handlers.js';
 import { handleTelegramWebhook, handleTelegramDebug } from './telegram/webhook.js';
+import { sendDailyDebtDigest } from './cron/debt-reminder.js';
 
 
 const FIREBASE_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -76,8 +77,15 @@ async function getFcmToken(env, accessToken, uid) {
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`user lookup failed: ${res.status}`);
   const doc = await res.json();
-  const token = doc.fields?.fcmToken?.stringValue;
+  const data = decodeDoc(doc);
+  if (!shouldSendPush(data)) return null;
+  const token = data && typeof data.fcmToken === 'string' ? data.fcmToken : null;
   return token || null;
+}
+
+export function shouldSendPush(userData) {
+  if (!userData) return true;
+  return userData.pushNotificationsEnabled !== false;
 }
 
 async function sendPush(env, accessToken, fcmToken, payload) {
@@ -522,8 +530,31 @@ export default {
         }
       }
 
+      if (isInWindow('09:00', nowMin)) {
+        if (cfg.lastDebtDigestDate !== todayStr) {
+          const digest = await sendDailyDebtDigest(env, accessToken);
+          for (const uid of digest.targets || []) {
+            const tok = await getFcmToken(env, accessToken, uid);
+            if (tok) {
+              await sendPush(env, accessToken, tok, {
+                title: 'Debt reminder',
+                body: digest.summary
+                  ? `Reminder: ${digest.summary}`
+                  : 'Reminder: open debts need attention',
+                type: 'debtRecorded',
+                targetUserId: uid,
+              });
+            }
+          }
+          await setDoc(env, accessToken, 'settings/app', { lastDebtDigestDate: todayStr });
+          console.log(`[cron] debt digest sent for ${todayStr}: ${digest.sent} docs`);
+        } else {
+          console.log(`[cron] debt digest deduped for ${todayStr}`);
+        }
+      }
+
       // Viewer weekly check-in: Monday 09:00 Addis
-      if (cfg.viewerCheckInEnabled === true && addisNow.getDay() === 1 && nowMin === 9 * 60) {
+      if (cfg.viewerCheckInEnabled === true && addisNow.getDay() === 1 && isInWindow('09:00', nowMin)) {
         if (cfg.lastViewerCheckInDate !== todayStr) {
           const viewers = await getUsersByRole(env, accessToken, 'viewer');
           for (const uid of viewers) {
