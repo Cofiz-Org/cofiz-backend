@@ -41,6 +41,11 @@ function hasTransactionOnDay(transactions, addisNow) {
   return transactions.some((t) => t.createdAt >= startMs && t.createdAt < endMs);
 }
 
+function shouldSendPush(userData) {
+  if (!userData) return true;
+  return userData.pushNotificationsEnabled !== false;
+}
+
 // ---- Tests ----
 
 console.log('Testing parseTimeToMinutes / isInWindow...');
@@ -97,5 +102,13 @@ console.log('Testing Addis bounds & hasTransactionToday...');
   assert.equal(hasTransactionOnDay([{ createdAt: bounds.endMs - 1 }], wall), true);
 }
 console.log('✓ hasTransactionToday bounds');
+
+console.log('Testing push opt-out predicate...');
+assert.equal(shouldSendPush(null), true);
+assert.equal(shouldSendPush(undefined), true);
+assert.equal(shouldSendPush({}), true);
+assert.equal(shouldSendPush({ pushNotificationsEnabled: true }), true);
+assert.equal(shouldSendPush({ pushNotificationsEnabled: false }), false);
+console.log('✓ push opt-out');
 
 console.log('All cron_window tests passed.');
