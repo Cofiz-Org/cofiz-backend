@@ -38,7 +38,7 @@ export async function sendDailyDebtDigest(env, accessToken) {
     from: [{ collectionId: 'debts' }],
     where: { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'open' } } },
   });
-  if (debts.length === 0) return { sent: 0 };
+  if (debts.length === 0) return { sent: 0, summary: '', targets: [] };
 
   // Group by collector
   const byCollector = new Map();
@@ -52,9 +52,9 @@ export async function sendDailyDebtDigest(env, accessToken) {
   const title = 'Debt reminder';
   const body = `Reminder: ${summary}`;
 
-  // Fan out to admins + viewers via notifications collection (push handled by existing flow)
   const roles = ['admin', 'viewer'];
   let sent = 0;
+  const targets = [];
   for (const role of roles) {
     const users = await runQuery(env, accessToken, {
       from: [{ collectionId: 'users' }],
@@ -78,8 +78,8 @@ export async function sendDailyDebtDigest(env, accessToken) {
         headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields }),
       });
-      if (r.ok) sent += 1;
+      if (r.ok) { sent += 1; targets.push(u.id); }
     }
   }
-  return { sent, summary };
+  return { sent, summary, targets };
 }
