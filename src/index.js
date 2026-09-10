@@ -105,7 +105,6 @@ async function sendPush(env, accessToken, fcmToken, payload) {
         priority: "high",
         notification: {
           channelId: "cofiz_main_channel",
-          priority: "high",
           defaultSound: true,
           defaultVibrateTimings: true,
         },
