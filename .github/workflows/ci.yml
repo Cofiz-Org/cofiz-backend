@@ -15,12 +15,9 @@ jobs:
         with: { node-version: '22' }
       - run: node --check src/index.js
       - run: node --check src/cron/debt-reminder.js
-      - run: node --test test/
+      - run: node --test "test/**/*.js"
   secrets:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: docker run --rm -v ${{ github.workspace }}:/repo zricethezav/gitleaks:latest detect --source /repo --config /repo/.gitleaks.toml -v
