@@ -1,0 +1,21 @@
+name: Hygiene
+on:
+  schedule: [{ cron: '0 6 1 * *' }]
+  workflow_dispatch:
+permissions:
+  issues: write
+  pull-requests: write
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-label: stale
+          stale-pr-label: stale
+          stale-issue-message: 'No activity for 60 days; marked stale. Comment to keep alive.'
+          stale-pr-message: 'No activity for 60 days; marked stale. Comment to keep alive.'
+          exempt-issue-labels: security,pinned
+          exempt-pr-labels: security,pinned
