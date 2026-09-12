@@ -1,0 +1,3 @@
+[allowlist]
+description = "test fixtures and docs"
+paths = ['''test/.*''', '''.*\.md''']
