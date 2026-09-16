@@ -339,7 +339,7 @@ async function handleReleaseAnnounce(request, env) {
   } catch (_) {
     return Response.json({ error: 'invalid json' }, { status: 400 });
   }
-  const tag = String(body.tag || '');
+  const tag = String(body.tag || '').trim().replace(/\s+/g, ' ');
   if (!tag) return Response.json({ error: 'tag required' }, { status: 400 });
   const { headline: pushBody, body: docBody } =
     formatReleaseNotes(tag, String(body.notes || ''));

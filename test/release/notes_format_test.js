@@ -32,12 +32,29 @@ console.log('Testing blank lines and inline markdown are stripped...');
 }
 console.log('✓ stripped');
 
+console.log('Testing literal text keeps snake_case and version ranges...');
+{
+  const { body } = formatReleaseNotes('v1.0.5', '- snake_case field kept\n- requires ~1.2.3');
+  assert.equal(body, 'v1.0.5 is ready to install\n\n✓ snake_case field kept\n✓ requires ~1.2.3');
+}
+console.log('✓ literals');
+
 console.log('Testing empty notes keep headline only...');
 {
   const { body } = formatReleaseNotes('v1.0.5', '   \n ');
   assert.equal(body, 'v1.0.5 is ready to install');
 }
 console.log('✓ empty');
+
+console.log('Testing long lines cap mid-list at a line boundary...');
+{
+  const long = `- ${'a'.repeat(300)}\n- ${'b'.repeat(300)}\n- short tail`;
+  const { body } = formatReleaseNotes('v1.0.5', long);
+  assert.ok(body.startsWith('v1.0.5 is ready to install\n\n✓ aaa'));
+  assert.ok(body.endsWith('…'));
+  assert.ok(!body.includes('short tail'));
+  assert.ok(!body.includes('bbb'));
+}
 
 console.log('Testing long notes cap at a line boundary with overflow count...');
 {
