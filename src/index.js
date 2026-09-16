@@ -2,6 +2,7 @@ import { handleTelegramLogin, handleTelegramLoginGet, handleTelegramNative, hand
 import { handleAdminWipe, handleAdminCheck } from './admin/handlers.js';
 import { handleTelegramWebhook, handleTelegramDebug } from './telegram/webhook.js';
 import { sendDailyDebtDigest } from './cron/debt-reminder.js';
+import { formatReleaseNotes } from './release/notes.js';
 
 
 const FIREBASE_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -340,7 +341,8 @@ async function handleReleaseAnnounce(request, env) {
   }
   const tag = String(body.tag || '');
   if (!tag) return Response.json({ error: 'tag required' }, { status: 400 });
-  const notes = String(body.notes || '').slice(0, 500);
+  const { headline: pushBody, body: docBody } =
+    formatReleaseNotes(tag, String(body.notes || ''));
 
   try {
     const accessToken = await getAccessToken(env);
@@ -352,7 +354,6 @@ async function handleReleaseAnnounce(request, env) {
     for (const d of docs) {
       const tok = d.data && d.data.fcmToken;
       if (!tok) { skipped++; continue; }
-      const pushBody = `${tag} is ready to install`;
       const r = await sendPush(env, accessToken, tok, {
         title: 'Cofiz \u2192 New Update',
         body: pushBody,
@@ -366,7 +367,7 @@ async function handleReleaseAnnounce(request, env) {
         accessToken,
         d.id,
         'Cofiz \u2192 New Update',
-        notes ? `${pushBody}\n\n${notes}` : pushBody,
+        docBody,
         'app_update',
         'system-release',
       );
