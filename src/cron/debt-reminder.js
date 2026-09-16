@@ -49,7 +49,7 @@ export async function sendDailyDebtDigest(env, accessToken) {
     byCollector.set(d.data.collectorId, cur);
   }
   const summary = [...byCollector.entries()].map(([_, v]) => `${v.name}: ${v.count} item(s), ETB ${v.total.toFixed(0)}`).join('; ');
-  const title = 'Debt reminder';
+  const title = 'Cofiz \u2192 Debt Reminder';
   const body = `Reminder: ${summary}`;
 
   const roles = ['admin', 'viewer'];
@@ -67,7 +67,7 @@ export async function sendDailyDebtDigest(env, accessToken) {
         targetUserId: { stringValue: u.id },
         title: { stringValue: title },
         body: { stringValue: body },
-        type: { stringValue: 'debtRecorded' },
+        type: { stringValue: 'debtReminder' },
         isRead: { booleanValue: false },
         createdAt: { integerValue: String(nowMs) },
         senderName: { stringValue: 'System' },

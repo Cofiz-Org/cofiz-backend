@@ -1,9 +1,3 @@
-// Cofiz FCM relay - deploy to Cloudflare Workers.
-// Receives {targetUserId, title, body, type} from the app, looks up the
-// target user's fcmToken in Firestore via REST, and sends the push through
-// FCM HTTP v1 - all authenticated with a Firebase service account passed
-// as environment variables.
-
 import { handleTelegramLogin, handleTelegramLoginGet, handleTelegramNative, handleEmailRequest, handleEmailVerify, handleWhatsappStart, handleWhatsappVerify, handleWhatsappResend, handleRegister } from './auth/index.js';
 import { handleAdminWipe, handleAdminCheck } from './admin/handlers.js';
 import { handleTelegramWebhook, handleTelegramDebug } from './telegram/webhook.js';
@@ -360,7 +354,7 @@ async function handleReleaseAnnounce(request, env) {
       if (!tok) { skipped++; continue; }
       const pushBody = `${tag} is ready to install`;
       const r = await sendPush(env, accessToken, tok, {
-        title: 'New Cofiz update',
+        title: 'Cofiz \u2192 New Update',
         body: pushBody,
         type: 'app_update',
         data: { version: tag },
@@ -371,7 +365,7 @@ async function handleReleaseAnnounce(request, env) {
         env,
         accessToken,
         d.id,
-        'New Cofiz update',
+        'Cofiz \u2192 New Update',
         notes ? `${pushBody}\n\n${notes}` : pushBody,
         'app_update',
         'system-release',
@@ -503,7 +497,7 @@ export default {
                 const tok = await getFcmToken(env, accessToken, uid);
                 if (tok) {
                   await sendPush(env, accessToken, tok, {
-                    title: 'Cofiz',
+                    title: 'Cofiz → Daily Reminder',
                     body: "No transaction recorded today — add today's purchases/distributions",
                     type: 'nightlyNoRecordReminder',
                     targetUserId: uid,
@@ -536,7 +530,7 @@ export default {
             const tok = await getFcmToken(env, accessToken, uid);
             if (tok) {
               await sendPush(env, accessToken, tok, {
-                title: 'Debt reminder',
+                title: 'Cofiz → Debt Reminder',
                 body: digest.summary
                   ? `Reminder: ${digest.summary}`
                   : 'Reminder: open debts need attention',
@@ -560,7 +554,7 @@ export default {
             const tok = await getFcmToken(env, accessToken, uid);
             if (tok) {
                 await sendPush(env, accessToken, tok, {
-                    title: 'Cofiz',
+                    title: 'Cofiz → Weekly Check-in',
                     body: "Check in: see this week's business",
                     type: 'viewerWeeklyCheckIn',
                     targetUserId: uid,

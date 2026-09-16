@@ -687,7 +687,7 @@ async function sendDecisionPush(env, accessToken, fcmToken, { body, type }) {
         body: JSON.stringify({
           message: {
             token: fcmToken,
-            notification: { title: 'Cofiz', body },
+            notification: { title: type === 'registrationApproved' ? 'Cofiz \u2192 Registration Approved' : 'Cofiz \u2192 Registration Denied', body },
             data: { type, click_action: 'FLUTTER_NOTIFICATION_CLICK' },
             android: {
               priority: 'high',

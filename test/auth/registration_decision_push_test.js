@@ -85,7 +85,7 @@ console.log('Testing approve sends direct FCM to pendingFcmToken...');
   assert.equal(calls.fcm.length, 1);
   const msg = calls.fcm[0].message;
   assert.equal(msg.token, 'tok-1');
-  assert.equal(msg.notification.title, 'Cofiz');
+  assert.equal(msg.notification.title, 'Cofiz → Registration Approved');
   assert.equal(msg.data.type, 'registrationApproved');
 }
 console.log('✓ approve push');
@@ -101,6 +101,7 @@ console.log('Testing deny reads token before delete, then pushes...');
   assert.equal(calls.deleteBeforeFcm, true);
   const msg = calls.fcm[0].message;
   assert.equal(msg.token, 'tok-1');
+  assert.equal(msg.notification.title, 'Cofiz → Registration Denied');
   assert.equal(msg.data.type, 'registrationDenied');
 }
 console.log('✓ deny push');
