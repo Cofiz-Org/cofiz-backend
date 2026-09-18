@@ -1,5 +1,3 @@
-// Central Amharic/English notification strings for server-sent pushes.
-// Usage: pick(STR.nightlyTitle, lang) where lang is 'am' or 'en'.
 export const STR = {
   nightlyTitle: { en: 'Cofiz → Daily Reminder', am: 'Cofiz → ዕለታዊ ማሳሰቢያ' },
   nightlyBody: {
@@ -47,4 +45,9 @@ export function langOf(userData) {
     return 'am';
   }
   return 'en';
+}
+
+export function sanitizeNotificationText(s) {
+  if (typeof s !== 'string') return s;
+  return s.replace(/\u2014/g, ':').replace(/\u2013/g, '-');
 }

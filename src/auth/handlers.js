@@ -745,11 +745,13 @@ export async function handleDenyRegistration(phoneE164, env) {
   const userUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
   let pushToken = null;
   let denyLang = 'en';
+  let denyName = '';
   try {
     const docRes = await fetch(userUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (docRes.ok) {
       const doc = await docRes.json();
       pushToken = doc.fields?.pendingFcmToken?.stringValue || doc.fields?.fcmToken?.stringValue;
+      denyName = doc.fields?.displayName?.stringValue || '';
       const code = doc.fields?.language_code?.stringValue || '';
       if (code.toLowerCase().startsWith('am')) denyLang = 'am';
     }
@@ -759,7 +761,7 @@ export async function handleDenyRegistration(phoneE164, env) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (pushToken) {
-    const bodies = STR.deniedBody('');
+    const bodies = STR.deniedBody(denyName);
     await sendDecisionPush(env, accessToken, pushToken, {
       body: bodies.en,
       bodyAm: bodies.am,

@@ -3,7 +3,7 @@ import { handleAdminWipe, handleAdminCheck } from './admin/handlers.js';
 import { handleTelegramWebhook, handleTelegramDebug } from './telegram/webhook.js';
 import { sendDailyDebtDigest } from './cron/debt-reminder.js';
 import { formatReleaseNotes } from './release/notes.js';
-import { STR, pick } from './l10n.js';
+import { STR, pick, langOf, sanitizeNotificationText } from './l10n.js';
 
 
 const FIREBASE_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -84,15 +84,18 @@ export function shouldSendPush(userData) {
   return userData.pushNotificationsEnabled !== false;
 }
 
-async function getUserLang(env, accessToken, uid) {
-  try {
-    const data = await getDoc(env, accessToken, `users/${uid}`);
-    const code = data && data.language_code;
-    if (typeof code === 'string' && code.toLowerCase().startsWith('am')) {
-      return 'am';
-    }
-  } catch (_) {}
-  return 'en';
+async function getUserPushInfo(env, accessToken, uid) {
+  const url = `https://${FIRESTORE_HOST}/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${uid}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 404) return { lang: 'en', token: null };
+  if (!res.ok) throw new Error(`user lookup failed: ${res.status}`);
+  const data = decodeDoc(await res.json());
+  const lang = langOf(data);
+  if (!shouldSendPush(data)) return { lang, token: null };
+  const token = data && typeof data.fcmToken === 'string' ? data.fcmToken : null;
+  return { lang, token: token || null };
 }
 
 async function sendPush(env, accessToken, fcmToken, payload) {
@@ -355,8 +358,10 @@ async function handleReleaseAnnounce(request, env) {
   }
   const tag = String(body.tag || '').trim().replace(/\s+/g, ' ');
   if (!tag) return Response.json({ error: 'tag required' }, { status: 400 });
-  const { headline: pushBody, body: docBody } =
+  const { headline: rawPushBody, body: rawDocBody } =
     formatReleaseNotes(tag, String(body.notes || ''));
+  const pushBody = sanitizeNotificationText(rawPushBody);
+  const docBody = sanitizeNotificationText(rawDocBody);
 
   try {
     const accessToken = await getAccessToken(env);
@@ -368,8 +373,7 @@ async function handleReleaseAnnounce(request, env) {
     for (const d of docs) {
       const tok = d.data && d.data.fcmToken;
       if (!tok) { skipped++; continue; }
-      const lang =
-        d.data && d.data.language_code === 'am' ? 'am' : 'en';
+      const lang = langOf(d.data);
       const r = await sendPush(env, accessToken, tok, {
         title: pick(STR.updateTitle, lang),
         body: pushBody,
@@ -387,7 +391,7 @@ async function handleReleaseAnnounce(request, env) {
         'app_update',
         'system-release',
         STR.updateTitle.am,
-        docBody,
+        null,
       );
     }
     return Response.json({ sent, failed, skipped, total: docs.length });
@@ -513,8 +517,8 @@ export default {
             if (!hasTx) {
               const admins = await getUsersByRole(env, accessToken, 'admin');
               for (const uid of admins) {
-                const lang = await getUserLang(env, accessToken, uid);
-                const tok = await getFcmToken(env, accessToken, uid);
+                const { lang, token: tok } =
+                  await getUserPushInfo(env, accessToken, uid);
                 if (tok) {
                   await sendPush(env, accessToken, tok, {
                     title: pick(STR.nightlyTitle, lang),
@@ -550,9 +554,9 @@ export default {
         if (cfg.lastDebtDigestDate !== todayStr) {
           const digest = await sendDailyDebtDigest(env, accessToken);
           for (const uid of digest.targets || []) {
-            const lang = await getUserLang(env, accessToken, uid);
+            const { lang, token: tok } =
+              await getUserPushInfo(env, accessToken, uid);
             const bodies = STR.debtBody(digest.summary);
-            const tok = await getFcmToken(env, accessToken, uid);
             if (tok) {
               await sendPush(env, accessToken, tok, {
                 title: pick(STR.debtTitle, lang),
@@ -574,8 +578,8 @@ export default {
         if (cfg.lastViewerCheckInDate !== todayStr) {
           const viewers = await getUsersByRole(env, accessToken, 'viewer');
           for (const uid of viewers) {
-            const lang = await getUserLang(env, accessToken, uid);
-            const tok = await getFcmToken(env, accessToken, uid);
+            const { lang, token: tok } =
+              await getUserPushInfo(env, accessToken, uid);
             if (tok) {
                 await sendPush(env, accessToken, tok, {
                     title: pick(STR.checkinTitle, lang),
