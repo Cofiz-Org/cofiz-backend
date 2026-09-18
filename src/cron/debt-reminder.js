@@ -3,6 +3,8 @@
 // Time: 09:00 Africa/Addis_Ababa (06:00 UTC, no DST)
 // Uses Firestore REST helpers from src/index.js (getAccessToken, runQuery etc. are inlined here for isolation)
 
+import { STR } from '../l10n.js';
+
 const FIRESTORE_HOST = "firestore.googleapis.com";
 
 function decodeField(v) {
@@ -49,8 +51,10 @@ export async function sendDailyDebtDigest(env, accessToken) {
     byCollector.set(d.data.collectorId, cur);
   }
   const summary = [...byCollector.entries()].map(([_, v]) => `${v.name}: ${v.count} item(s), ETB ${v.total.toFixed(0)}`).join('; ');
-  const title = 'Cofiz \u2192 Debt Reminder';
+  const title = STR.debtTitle.en;
   const body = `Reminder: ${summary}`;
+  const titleAm = STR.debtTitle.am;
+  const bodyAm = `ማሳሰቢያ: ${summary}`;
 
   const roles = ['admin', 'viewer'];
   let sent = 0;
@@ -67,6 +71,8 @@ export async function sendDailyDebtDigest(env, accessToken) {
         targetUserId: { stringValue: u.id },
         title: { stringValue: title },
         body: { stringValue: body },
+        title_am: { stringValue: titleAm },
+        body_am: { stringValue: bodyAm },
         type: { stringValue: 'debtReminder' },
         isRead: { booleanValue: false },
         createdAt: { integerValue: String(nowMs) },

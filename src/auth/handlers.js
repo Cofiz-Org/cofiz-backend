@@ -12,6 +12,7 @@ import { sendWhatsAppCode } from '../otp/whatsapp.js';
 import { createCustomToken } from '../otp/custom_token.js';
 import { validateTelegramHash } from './telegram.js';
 import { normalizeE164, E164_RE } from '../phone.js';
+import { STR, pick } from '../l10n.js';
 
 const E164 = E164_RE;
 const ALLOWED_PROVIDERS = new Set(['telegram', 'whatsapp']);
@@ -674,7 +675,8 @@ export async function handleRegister(request, env) {
   return json({ ok: true, message: 'Registration submitted. Waiting for approval.' });
 }
 
-async function sendDecisionPush(env, accessToken, fcmToken, { body, type }) {
+async function sendDecisionPush(env, accessToken, fcmToken, { body, bodyAm, type, lang }) {
+  const titles = type === 'registrationApproved' ? STR.approvedTitle : STR.deniedTitle;
   try {
     const res = await fetch(
       `https://fcm.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/messages:send`,
@@ -687,7 +689,10 @@ async function sendDecisionPush(env, accessToken, fcmToken, { body, type }) {
         body: JSON.stringify({
           message: {
             token: fcmToken,
-            notification: { title: type === 'registrationApproved' ? 'Cofiz \u2192 Registration Approved' : 'Cofiz \u2192 Registration Denied', body },
+            notification: {
+              title: pick(titles, lang),
+              body: lang === 'am' && bodyAm ? bodyAm : body,
+            },
             data: { type, click_action: 'FLUTTER_NOTIFICATION_CLICK' },
             android: {
               priority: 'high',
@@ -712,6 +717,8 @@ export async function handleApproveRegistration(phoneE164, env) {
   const doc = await docRes.json();
   const requestedRole = doc.fields?.requestedRole?.stringValue || 'admin';
   const displayName = doc.fields?.displayName?.stringValue || '';
+  const langCode = doc.fields?.language_code?.stringValue || '';
+  const lang = langCode.toLowerCase().startsWith('am') ? 'am' : 'en';
   const patchFields = { role: requestedRole, isActive: true, lastLoginAt: Date.now() };
   const mask = Object.keys(patchFields).map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
   await fetch(`${userUrl}?${mask}`, {
@@ -721,9 +728,12 @@ export async function handleApproveRegistration(phoneE164, env) {
   });
   const pushToken = doc.fields?.pendingFcmToken?.stringValue || doc.fields?.fcmToken?.stringValue;
   if (pushToken) {
+    const bodies = STR.approvedBody(displayName);
     await sendDecisionPush(env, accessToken, pushToken, {
-      body: `Hi ${displayName}, your Cofiz registration was approved. You can now sign in.`,
+      body: bodies.en,
+      bodyAm: bodies.am,
       type: 'registrationApproved',
+      lang,
     });
   }
   return { displayName, requestedRole };
@@ -734,11 +744,16 @@ export async function handleDenyRegistration(phoneE164, env) {
   const accessToken = await getAccessToken(env);
   const userUrl = `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/users/${encodeURIComponent(uid)}`;
   let pushToken = null;
+  let denyLang = 'en';
+  let denyName = '';
   try {
     const docRes = await fetch(userUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (docRes.ok) {
       const doc = await docRes.json();
       pushToken = doc.fields?.pendingFcmToken?.stringValue || doc.fields?.fcmToken?.stringValue;
+      denyName = doc.fields?.displayName?.stringValue || '';
+      const code = doc.fields?.language_code?.stringValue || '';
+      if (code.toLowerCase().startsWith('am')) denyLang = 'am';
     }
   } catch (_) {}
   await fetch(userUrl, {
@@ -746,9 +761,12 @@ export async function handleDenyRegistration(phoneE164, env) {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (pushToken) {
+    const bodies = STR.deniedBody(denyName);
     await sendDecisionPush(env, accessToken, pushToken, {
-      body: 'Your Cofiz registration was not approved. Please contact your admin.',
+      body: bodies.en,
+      bodyAm: bodies.am,
       type: 'registrationDenied',
+      lang: denyLang,
     });
   }
 }
