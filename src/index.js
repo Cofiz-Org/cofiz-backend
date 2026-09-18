@@ -499,7 +499,7 @@ export default {
                 if (tok) {
                   await sendPush(env, accessToken, tok, {
                     title: 'Cofiz → Daily Reminder',
-                    body: "No transaction recorded today — add today's purchases/distributions",
+                    body: "No transaction recorded today: add today's purchases/distributions",
                     type: 'nightlyNoRecordReminder',
                     targetUserId: uid,
                   });
@@ -509,7 +509,7 @@ export default {
                   accessToken,
                   uid,
                   'Reminder: no record today',
-                  "No transaction recorded today — add today's purchases/distributions",
+                  "No transaction recorded today: add today's purchases/distributions",
                   'nightlyNoRecordReminder',
                 );
               }
