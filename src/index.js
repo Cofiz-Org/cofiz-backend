@@ -3,6 +3,7 @@ import { handleAdminWipe, handleAdminCheck } from './admin/handlers.js';
 import { handleTelegramWebhook, handleTelegramDebug } from './telegram/webhook.js';
 import { sendDailyDebtDigest } from './cron/debt-reminder.js';
 import { formatReleaseNotes } from './release/notes.js';
+import { STR, pick } from './l10n.js';
 
 
 const FIREBASE_SCOPE = "https://www.googleapis.com/auth/cloud-platform";
@@ -81,6 +82,17 @@ async function getFcmToken(env, accessToken, uid) {
 export function shouldSendPush(userData) {
   if (!userData) return true;
   return userData.pushNotificationsEnabled !== false;
+}
+
+async function getUserLang(env, accessToken, uid) {
+  try {
+    const data = await getDoc(env, accessToken, `users/${uid}`);
+    const code = data && data.language_code;
+    if (typeof code === 'string' && code.toLowerCase().startsWith('am')) {
+      return 'am';
+    }
+  } catch (_) {}
+  return 'en';
 }
 
 async function sendPush(env, accessToken, fcmToken, payload) {
@@ -304,13 +316,15 @@ async function hasTransactionToday(env, accessToken, addisNow) {
   return docs.length > 0;
 }
 
-async function createNotificationDoc(env, accessToken, targetUserId, title, body, type, senderId = 'system-cron') {
+async function createNotificationDoc(env, accessToken, targetUserId, title, body, type, senderId = 'system-cron', titleAm = null, bodyAm = null) {
   const url = `https://${FIRESTORE_HOST}/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/notifications`;
   const nowMs = Date.now();
   const fields = encodeFields({
     targetUserId,
     title,
     body,
+    ...(titleAm != null ? { title_am: titleAm } : {}),
+    ...(bodyAm != null ? { body_am: bodyAm } : {}),
     type,
     isRead: false,
     createdAt: nowMs,
@@ -354,8 +368,10 @@ async function handleReleaseAnnounce(request, env) {
     for (const d of docs) {
       const tok = d.data && d.data.fcmToken;
       if (!tok) { skipped++; continue; }
+      const lang =
+        d.data && d.data.language_code === 'am' ? 'am' : 'en';
       const r = await sendPush(env, accessToken, tok, {
-        title: 'Cofiz \u2192 New Update',
+        title: pick(STR.updateTitle, lang),
         body: pushBody,
         type: 'app_update',
         data: { version: tag },
@@ -366,10 +382,12 @@ async function handleReleaseAnnounce(request, env) {
         env,
         accessToken,
         d.id,
-        'Cofiz \u2192 New Update',
+        STR.updateTitle.en,
         docBody,
         'app_update',
         'system-release',
+        STR.updateTitle.am,
+        docBody,
       );
     }
     return Response.json({ sent, failed, skipped, total: docs.length });
@@ -495,11 +513,12 @@ export default {
             if (!hasTx) {
               const admins = await getUsersByRole(env, accessToken, 'admin');
               for (const uid of admins) {
+                const lang = await getUserLang(env, accessToken, uid);
                 const tok = await getFcmToken(env, accessToken, uid);
                 if (tok) {
                   await sendPush(env, accessToken, tok, {
-                    title: 'Cofiz → Daily Reminder',
-                    body: "No transaction recorded today: add today's purchases/distributions",
+                    title: pick(STR.nightlyTitle, lang),
+                    body: pick(STR.nightlyBody, lang),
                     type: 'nightlyNoRecordReminder',
                     targetUserId: uid,
                   });
@@ -508,9 +527,12 @@ export default {
                   env,
                   accessToken,
                   uid,
-                  'Reminder: no record today',
-                  "No transaction recorded today: add today's purchases/distributions",
+                  STR.nightlyTitle.en,
+                  STR.nightlyBody.en,
                   'nightlyNoRecordReminder',
+                  'system-cron',
+                  STR.nightlyTitle.am,
+                  STR.nightlyBody.am,
                 );
               }
               await setDoc(env, accessToken, 'settings/app', { lastReminderDate: todayStr });
@@ -528,13 +550,13 @@ export default {
         if (cfg.lastDebtDigestDate !== todayStr) {
           const digest = await sendDailyDebtDigest(env, accessToken);
           for (const uid of digest.targets || []) {
+            const lang = await getUserLang(env, accessToken, uid);
+            const bodies = STR.debtBody(digest.summary);
             const tok = await getFcmToken(env, accessToken, uid);
             if (tok) {
               await sendPush(env, accessToken, tok, {
-                title: 'Cofiz → Debt Reminder',
-                body: digest.summary
-                  ? `Reminder: ${digest.summary}`
-                  : 'Reminder: open debts need attention',
+                title: pick(STR.debtTitle, lang),
+                body: lang === 'am' ? bodies.am : bodies.en,
                 type: 'debtRecorded',
                 targetUserId: uid,
               });
@@ -552,11 +574,12 @@ export default {
         if (cfg.lastViewerCheckInDate !== todayStr) {
           const viewers = await getUsersByRole(env, accessToken, 'viewer');
           for (const uid of viewers) {
+            const lang = await getUserLang(env, accessToken, uid);
             const tok = await getFcmToken(env, accessToken, uid);
             if (tok) {
                 await sendPush(env, accessToken, tok, {
-                    title: 'Cofiz → Weekly Check-in',
-                    body: "Check in: see this week's business",
+                    title: pick(STR.checkinTitle, lang),
+                    body: pick(STR.checkinBody, lang),
                     type: 'viewerWeeklyCheckIn',
                     targetUserId: uid,
                   });
@@ -565,9 +588,12 @@ export default {
               env,
               accessToken,
               uid,
-              'Weekly check-in',
-              "Check in: see this week's business",
+              STR.checkinTitle.en,
+              STR.checkinBody.en,
               'viewerWeeklyCheckIn',
+              'system-cron',
+              STR.checkinTitle.am,
+              STR.checkinBody.am,
             );
           }
           await setDoc(env, accessToken, 'settings/app', { lastViewerCheckInDate: todayStr });
